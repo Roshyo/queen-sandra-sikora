@@ -1,0 +1,556 @@
+/* ----------------------------------------------------------
+   THE SIKORA SYSTEM — Replay '26  (birthday interactive)
+   Single-file front-end. No build step, no dependencies.
+   Fonts load from Google Fonts; confetti is vanilla canvas.
+
+   ONE EXTERNAL ASSET: the comic image is referenced as
+   ./comic.jpg  (shipped alongside this file). Keep them in
+   the same folder, or swap the path in .comic-frame.
+
+   Nav: tap right/left, arrow keys, or swipe. Save as .html
+   to run.
+---------------------------------------------------------- */
+
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
+<title>The Sikora System — Replay '26</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Fraunces:ital,opsz,wght@0,9..144,300..600;1,9..144,300..500&family=Inter:wght@400;500;600&family=Space+Mono:wght@400;700&display=swap" rel="stylesheet">
+<style>
+  :root{
+    --paper:#FBFAF8; --ink:#16130F; --cream:#F3EFE7; --plum:#241C2B;
+    --coral:#E59A98; --blush:#F4DCD9; --sage:#BFCABF; --peach:#F7D6BB; --gold:#EFB471;
+  }
+  *{box-sizing:border-box;margin:0;padding:0;-webkit-tap-highlight-color:transparent}
+  html,body{height:100%}
+  body{font-family:"Inter",sans-serif;background:#000;color:var(--ink);-webkit-font-smoothing:antialiased;overflow:hidden}
+
+  #app{position:fixed;inset:0;width:100%;height:100dvh;height:100vh;overflow:hidden;user-select:none}
+  .screen{position:absolute;inset:0;display:flex;flex-direction:column;
+    padding:clamp(22px,5.5vw,40px);
+    padding-top:max(clamp(22px,5.5vw,40px), env(safe-area-inset-top));
+    opacity:0;visibility:hidden;transition:opacity .45s ease;cursor:pointer}
+  .screen.active{opacity:1;visibility:visible}
+
+  .serif{font-family:"Fraunces",serif}
+  .mono{font-family:"Space Mono",monospace}
+
+  /* top chrome */
+  .chrome{position:absolute;top:0;left:0;right:0;padding:max(12px,env(safe-area-inset-top)) clamp(16px,5vw,28px) 0;z-index:20;pointer-events:none}
+  .bars{display:flex;gap:4px;margin-bottom:13px}
+  .bar{flex:1;height:3px;border-radius:3px;background:rgba(0,0,0,.16);overflow:hidden}
+  .bar.dark{background:rgba(255,255,255,.26)}
+  .bar i{display:block;height:100%;width:0;background:var(--ink);transition:width .35s ease}
+  .bar.dark i{background:#fff}
+  .bar.done i,.bar.now i{width:100%}
+  .toprow{display:flex;justify-content:space-between;align-items:center;pointer-events:auto}
+  .wordmark{font-family:"Space Mono",monospace;font-size:12px;font-weight:700;letter-spacing:.12em}
+  .wordmark .mu{opacity:.5;font-weight:400}
+  .close{pointer-events:auto;border:none;background:transparent;cursor:pointer;font-size:22px;line-height:1;color:inherit;opacity:.55;padding:6px}
+  .close:hover{opacity:1}
+  .chrome.hidden{display:none}
+
+  .content{margin:auto;width:100%;max-width:640px;position:relative;z-index:5}
+  .eyebrow{font-family:"Space Mono",monospace;font-size:11px;letter-spacing:.18em;text-transform:uppercase;opacity:.7;margin-bottom:18px}
+  .beat{font-family:"Fraunces",serif;font-style:italic;font-weight:340;font-size:clamp(16px,4.4vw,20px);opacity:.72;margin-bottom:18px}
+  .display{font-family:"Fraunces",serif;font-weight:380;line-height:.99;letter-spacing:-.02em;font-size:clamp(44px,12vw,86px)}
+  .display em{font-style:italic;font-weight:340}
+  .micro{font-size:clamp(15px,4.2vw,18px);line-height:1.5;margin-top:20px;max-width:32ch;opacity:.82}
+  .credit{font-family:"Space Mono",monospace;font-size:10px;letter-spacing:.14em;text-transform:uppercase;opacity:.45}
+
+  /* entrance stagger */
+  .r{opacity:0;transform:translateY(18px);transition:opacity .6s ease, transform .6s cubic-bezier(.2,.8,.2,1)}
+  .active .r{opacity:1;transform:none}
+  .active .content .r:nth-child(1){transition-delay:.10s}
+  .active .content .r:nth-child(2){transition-delay:.18s}
+  .active .content .r:nth-child(3){transition-delay:.26s}
+  .active .content .r:nth-child(4){transition-delay:.34s}
+  .active .content .r:nth-child(5){transition-delay:.42s}
+  .active .content .r:nth-child(6){transition-delay:.50s}
+
+  /* cover */
+  #cover{background:var(--ink);color:var(--cream)}
+  .stack{display:flex;flex-direction:column;gap:7px;margin-bottom:28px}
+  .stack span{height:clamp(13px,3.6vw,18px);border-radius:3px;transform-origin:left;animation:grow .7s cubic-bezier(.2,.8,.2,1) backwards}
+  .active .stack span:nth-child(1){animation-delay:.15s}.active .stack span:nth-child(2){animation-delay:.24s}
+  .active .stack span:nth-child(3){animation-delay:.33s}.active .stack span:nth-child(4){animation-delay:.42s}
+  .active .stack span:nth-child(5){animation-delay:.51s}
+  @keyframes grow{from{transform:scaleX(0);opacity:0}to{transform:scaleX(1);opacity:1}}
+  .cover-h{font-family:"Fraunces",serif;font-weight:360;font-size:clamp(36px,9.5vw,64px);line-height:1.03;letter-spacing:-.02em;max-width:15ch}
+  .cover-h em{font-style:italic;color:var(--coral)}
+  .cover-sub{font-size:clamp(15px,4.2vw,18px);opacity:.72;margin-top:18px;max-width:34ch;line-height:1.5}
+  .btn{display:inline-flex;align-items:center;gap:11px;background:var(--cream);color:var(--ink);border:none;border-radius:999px;
+    font-family:"Inter",sans-serif;font-weight:600;font-size:16px;padding:16px 30px;cursor:pointer;transition:transform .2s ease, box-shadow .3s ease}
+  .btn:hover{transform:translateY(-2px);box-shadow:0 16px 36px -16px rgba(229,154,152,.7)}
+  .btn .tri{font-size:12px}
+  .cover-foot{margin-top:26px;color:var(--cream);opacity:.4}
+
+  /* statement / title cards (dark) */
+  .dark{background:var(--ink);color:var(--cream)}
+  #intro .display{font-size:clamp(30px,8vw,62px)}
+  .titlecard .ch{font-family:"Space Mono",monospace;font-size:11px;letter-spacing:.2em;text-transform:uppercase;opacity:.55;margin-bottom:20px}
+  .titlecard .big{font-family:"Fraunces",serif;font-weight:360;font-size:clamp(48px,14vw,98px);line-height:.96;letter-spacing:-.02em}
+  .titlecard .desc{font-size:clamp(15px,4.2vw,18px);opacity:.72;margin-top:22px;max-width:30ch;line-height:1.55}
+
+  /* color chapters */
+  #c-coral{background:#FBEFEE}#c-blush{background:#FCF5F3}#c-sage{background:#EFF3EF}#c-peach{background:#FDF4EA}#c-gold{background:#FCF1E1}
+  .colorcard{display:block;width:min(370px,86vw);margin:0 auto;border:none;background:#fff;border-radius:22px;overflow:hidden;
+    box-shadow:0 24px 60px -28px rgba(80,60,45,.5);cursor:pointer;text-align:left;padding:0;font:inherit;color:inherit;
+    transition:transform .25s ease, box-shadow .25s ease}
+  .colorcard:hover{transform:translateY(-4px);box-shadow:0 30px 70px -26px rgba(80,60,45,.6)}
+  .colorcard:focus-visible{outline:2px solid var(--ink);outline-offset:3px}
+  .cc-fill{display:flex;align-items:flex-end;height:clamp(140px,30vh,210px);padding:18px 20px}
+  .cc-name{font-family:"Fraunces",serif;font-weight:440;font-size:clamp(22px,6vw,30px);letter-spacing:-.01em;color:var(--ink)}
+  .cc-meta{display:flex;justify-content:space-between;align-items:center;padding:15px 20px;gap:12px}
+  .cc-token{font-family:"Space Mono",monospace;font-size:10.5px;letter-spacing:.1em;text-transform:uppercase;color:#A89F92}
+  .cc-hex{font-family:"Space Mono",monospace;font-size:13px;color:var(--ink);display:flex;align-items:center;gap:9px}
+  .cc-copy{font-family:"Space Mono",monospace;font-size:9.5px;letter-spacing:.1em;text-transform:uppercase;background:#F1ECE3;color:#8C8478;border-radius:999px;padding:5px 9px}
+  .cc-copy.done{background:var(--ink);color:var(--cream)}
+  .cc-cap{text-align:center;margin-top:20px}
+
+  /* typography */
+  #typeramp{background:var(--paper)}
+  .ramp{display:flex;flex-direction:column;gap:20px}
+  .row{display:grid;grid-template-columns:70px 1fr;gap:18px;align-items:baseline}
+  .row .lbl{font-family:"Space Mono",monospace;font-size:10px;letter-spacing:.08em;color:#B3ABA0;text-transform:uppercase;padding-top:.6em}
+  .t-d{font-family:"Fraunces",serif;font-weight:400;font-size:clamp(38px,11vw,66px);line-height:1;letter-spacing:-.025em}
+  .t-d em{font-style:italic;color:var(--coral)}
+  .t-t{font-family:"Fraunces",serif;font-style:italic;font-weight:340;font-size:clamp(20px,5.6vw,28px);line-height:1.12;color:#3D3933}
+  .t-b{font-size:clamp(15px,4vw,16px);color:#5A544C;line-height:1.5;max-width:44ch}
+  .t-c{font-family:"Space Mono",monospace;font-size:11px;letter-spacing:.06em;color:#B3ABA0;text-transform:uppercase}
+
+  /* celebrate */
+  #celebrate{background:var(--ink);color:var(--cream);transition:background .6s ease}
+  #celebrate.popped{background:var(--plum)}
+  .cel-pre,.cel-post{position:relative;z-index:5}
+  .cel-post{display:none}
+  #celebrate.popped .cel-pre{display:none}
+  #celebrate.popped .cel-post{display:block}
+  .cel-h{font-family:"Fraunces",serif;font-weight:360;font-size:clamp(32px,8.5vw,58px);line-height:1.05;max-width:16ch}
+  .cel-lang{font-family:"Space Mono",monospace;font-size:11px;letter-spacing:.2em;text-transform:uppercase;opacity:.5;margin-bottom:16px}
+  .cel-greet{font-family:"Fraunces",serif;font-weight:380;font-size:clamp(36px,10vw,76px);line-height:1.02;letter-spacing:-.02em}
+  .cel-greet em{font-style:italic;color:var(--coral)}
+  .cel-btn{margin-top:30px;background:var(--cream);color:var(--ink);border:none;border-radius:999px;font-family:"Inter",sans-serif;font-weight:600;font-size:17px;padding:18px 42px;cursor:pointer;transition:transform .15s ease}
+  .cel-btn:hover{transform:translateY(-2px)}.cel-btn:active{transform:scale(.97)}
+  .cel-again{margin-top:26px;background:transparent;border:1px solid rgba(255,255,255,.35);color:var(--cream);border-radius:999px;font-family:"Space Mono",monospace;font-size:12px;letter-spacing:.1em;text-transform:uppercase;padding:12px 22px;cursor:pointer}
+  .cel-again:hover{border-color:#fff}
+
+  /* candle */
+  #candle{background:radial-gradient(120% 90% at 50% 36%, #3A2E3F 0%, var(--plum) 55%, #181219 100%);color:var(--cream)}
+  #candle .content{text-align:center}
+  .candle-title{font-family:"Fraunces",serif;font-weight:360;font-style:italic;font-size:clamp(30px,8vw,52px);line-height:1.04}
+  .candle-sub{font-size:clamp(14px,3.9vw,16.5px);opacity:.72;margin-top:14px;max-width:30ch;margin-left:auto;margin-right:auto;line-height:1.5;transition:opacity .4s ease}
+  .candle-stage{margin:34px auto 30px;width:60px;height:150px;position:relative}
+  .candle{position:absolute;bottom:0;left:50%;transform:translateX(-50%);width:30px;height:104px;border-radius:7px 7px 4px 4px;
+    background:linear-gradient(180deg,#F7E7E4 0%,#F4DCD9 35%,#E7B7A6 100%);
+    box-shadow:inset -5px 0 8px rgba(150,90,80,.25), inset 4px 0 6px rgba(255,255,255,.5)}
+  .candle::after{content:"";position:absolute;top:0;left:0;right:0;height:7px;background:radial-gradient(circle at 50% 100%, rgba(120,70,60,.4), transparent 70%);border-radius:50%}
+  .wick{position:absolute;bottom:104px;left:50%;transform:translateX(-50%);width:3px;height:10px;background:#3a2b2b;border-radius:2px;z-index:2}
+  .flame{position:absolute;bottom:112px;left:50%;width:18px;height:30px;transform:translateX(-50%);
+    border-radius:50% 50% 50% 50% / 65% 65% 38% 38%;
+    background:radial-gradient(circle at 50% 75%, #fff 0%, #FFEFA8 22%, #FFB347 52%, #FF7A1A 82%, #E8590C 100%);
+    filter:drop-shadow(0 0 18px rgba(255,160,50,.85));transform-origin:50% 100%;animation:flick .12s infinite alternate;z-index:1}
+  .glow{position:absolute;bottom:96px;left:50%;transform:translateX(-50%);width:120px;height:120px;border-radius:50%;
+    background:radial-gradient(circle, rgba(255,180,70,.32) 0%, transparent 65%);pointer-events:none;transition:opacity .5s ease}
+  @keyframes flick{0%{transform:translateX(-50%) scaleY(1) rotate(-1.5deg)}100%{transform:translateX(-51%) scaleY(1.08) rotate(1.5deg)}}
+  .smoke{position:absolute;bottom:114px;left:50%;transform:translateX(-50%);width:6px;height:6px;border-radius:50%;
+    background:rgba(220,220,220,.5);opacity:0;filter:blur(2px)}
+  #candle.out .flame{opacity:0;transform:translateX(-50%) scaleY(.1);transition:opacity .45s ease, transform .45s ease;animation:none}
+  #candle.out .glow{opacity:0}
+  #candle.out .smoke{animation:rise 1.6s ease-out forwards}
+  @keyframes rise{0%{opacity:.6;transform:translate(-50%,0) scale(1)}100%{opacity:0;transform:translate(-50%,-70px) scale(3.4)}}
+  .candle-btn{background:var(--cream);color:var(--ink);border:none;border-radius:999px;font-family:"Inter",sans-serif;font-weight:600;font-size:16px;padding:15px 38px;cursor:pointer;transition:transform .15s ease}
+  .candle-btn:hover{transform:translateY(-2px)}
+
+  /* comic intro */
+  #comicintro .display{font-size:clamp(34px,9vw,64px)}
+
+  /* comic player overlay */
+  .comic-stage{position:fixed;inset:0;z-index:60;background:#0c0a0d;display:none;flex-direction:column;align-items:center;justify-content:center;gap:18px;padding:max(20px,env(safe-area-inset-top)) 18px max(20px,env(safe-area-inset-bottom))}
+  .comic-stage.open{display:flex}
+  .comic-top{position:absolute;top:max(14px,env(safe-area-inset-top));left:0;right:0;display:flex;justify-content:space-between;align-items:center;padding:0 20px}
+  .comic-label{font-family:"Space Mono",monospace;font-size:11px;letter-spacing:.16em;text-transform:uppercase;color:rgba(255,255,255,.6)}
+  .comic-x{background:transparent;border:none;color:#fff;opacity:.6;font-size:22px;cursor:pointer;padding:6px}
+  .comic-x:hover{opacity:1}
+  .comic-frame{width:min(94vw, calc((100dvh - 150px) * 1.413));aspect-ratio:1400 / 991;
+    background-image:url('comic.jpg');background-size:200% 200%;background-position:0% 0%;background-repeat:no-repeat;
+    border-radius:14px;box-shadow:0 30px 90px -24px rgba(0,0,0,.8);overflow:hidden;cursor:pointer;
+    transition:background-position .7s cubic-bezier(.4,0,.2,1)}
+  .comic-dots{display:flex;gap:8px}
+  .comic-dot{width:26px;height:4px;border-radius:3px;background:rgba(255,255,255,.25);transition:background .3s ease}
+  .comic-dot.on{background:#fff}
+  .comic-hint{font-family:"Space Mono",monospace;font-size:10px;letter-spacing:.16em;text-transform:uppercase;color:rgba(255,255,255,.4)}
+
+  /* finale */
+  #finale{background:var(--paper)}
+  .notes{list-style:none;display:flex;flex-direction:column;gap:13px;margin-top:6px}
+  .notes li{font-size:clamp(15px,4.2vw,17px);color:#4A453D;display:flex;gap:14px;align-items:flex-start}
+  .notes .k{font-family:"Space Mono",monospace;font-size:11px;letter-spacing:.06em;text-transform:uppercase;color:var(--coral);flex:0 0 78px;padding-top:3px}
+  .sign{font-family:"Fraunces",serif;font-style:italic;font-size:clamp(17px,4.6vw,20px);color:#6E675E;margin-top:28px}
+  .replay{margin-top:22px;display:inline-flex;align-items:center;gap:10px;background:var(--ink);color:var(--cream);border:none;border-radius:999px;font-family:"Inter",sans-serif;font-weight:600;font-size:15px;padding:14px 26px;cursor:pointer}
+  .replay:hover{transform:translateY(-2px)}
+  .fin-credit{margin-top:26px}
+
+  .navhint{position:absolute;bottom:max(20px,env(safe-area-inset-bottom));left:0;right:0;text-align:center;font-family:"Space Mono",monospace;font-size:10px;letter-spacing:.16em;text-transform:uppercase;opacity:.34;z-index:6;pointer-events:none}
+
+  canvas#fx{position:fixed;inset:0;width:100%;height:100%;pointer-events:none;z-index:30}
+
+  @media (prefers-reduced-motion:reduce){*{animation:none !important;transition:opacity .2s ease !important}.r{transform:none}}
+</style>
+</head>
+<body>
+<div id="app">
+  <canvas id="fx"></canvas>
+
+  <div class="chrome hidden" id="chrome">
+    <div class="bars" id="bars"></div>
+    <div class="toprow">
+      <span class="wordmark">Replay <span class="mu">’26</span></span>
+      <button class="close" id="close" aria-label="Restart">&times;</button>
+    </div>
+  </div>
+
+  <!-- 0 COVER -->
+  <section class="screen active dark" id="cover" data-dark="1">
+    <div class="content">
+      <div class="eyebrow r">A birthday release · The Sikora System</div>
+      <div class="stack r" aria-hidden="true">
+        <span style="background:var(--coral);width:86%"></span>
+        <span style="background:var(--blush);width:64%"></span>
+        <span style="background:var(--sage);width:78%"></span>
+        <span style="background:var(--peach);width:55%"></span>
+        <span style="background:var(--gold);width:70%"></span>
+      </div>
+      <h1 class="cover-h r">Sandra, welcome to your own mini <em>brand-system.</em></h1>
+      <p class="cover-sub r">A little recap of all the things you inspire in us — week by week ;)</p>
+      <button class="btn ctrl r" id="play"><span class="tri">▶</span> Play</button>
+      <div class="cover-foot credit r">Powered by AI · built by the team</div>
+    </div>
+  </section>
+
+  <!-- 1 STATEMENT -->
+  <section class="screen dark" id="intro" data-dark="1">
+    <div class="content">
+      <div class="eyebrow r">A note before we start</div>
+      <h2 class="display r">To celebrate your day, we built a system <em>inspired by you.</em></h2>
+      <p class="micro r">Yes — you, Sandra :) So here's a little of everything you inspire in us.</p>
+      <div class="credit r" style="margin-top:22px">Powered by AI · built by the team</div>
+    </div>
+    <div class="navhint">tap to continue ›</div>
+  </section>
+
+  <!-- 2 TITLE: COLOR PALETTE -->
+  <section class="screen dark titlecard" id="t-color" data-dark="1">
+    <div class="content">
+      <div class="ch r">Chapter 01</div>
+      <div class="big r">Color<br>Palette</div>
+      <p class="desc r">Five colours, one muse. An elegant palette — calm, high-end, a little bit girly.</p>
+    </div>
+  </section>
+
+  <!-- 3 CORAL -->
+  <section class="screen" id="c-coral">
+    <div class="content">
+      <div class="eyebrow r">Style 01 / 05</div>
+      <div class="beat r">This one runs the mornings.</div>
+      <button class="colorcard ctrl r" data-hex="#E59A98">
+        <span class="cc-fill" style="background:var(--coral)"><span class="cc-name">Have an Amazing Day</span></span>
+        <span class="cc-meta"><span class="cc-token">Sikora / Primary</span><span class="cc-hex">#E59A98 <span class="cc-copy">copy</span></span></span>
+      </button>
+      <p class="micro cc-cap r" style="margin-left:auto;margin-right:auto;text-align:center">She says it every morning. She means it. Usually.</p>
+    </div>
+  </section>
+
+  <!-- 4 BLUSH -->
+  <section class="screen" id="c-blush">
+    <div class="content">
+      <div class="eyebrow r">Style 02 / 05</div>
+      <div class="beat r">This one never dresses down.</div>
+      <button class="colorcard ctrl r" data-hex="#F4DCD9">
+        <span class="cc-fill" style="background:var(--blush)"><span class="cc-name">Swarovski</span></span>
+        <span class="cc-meta"><span class="cc-token">Blush / Crystal</span><span class="cc-hex">#F4DCD9 <span class="cc-copy">copy</span></span></span>
+      </button>
+      <p class="micro cc-cap r" style="margin-left:auto;margin-right:auto;text-align:center">If it doesn't sparkle, it doesn't ship.</p>
+    </div>
+  </section>
+
+  <!-- 5 SAGE -->
+  <section class="screen" id="c-sage">
+    <div class="content">
+      <div class="eyebrow r">Style 03 / 05</div>
+      <div class="beat r">This one already booked a flight.</div>
+      <button class="colorcard ctrl r" data-hex="#BFCABF">
+        <span class="cc-fill" style="background:var(--sage)"><span class="cc-name">Monet</span></span>
+        <span class="cc-meta"><span class="cc-token">Sage / Jardin</span><span class="cc-hex">#BFCABF <span class="cc-copy">copy</span></span></span>
+      </button>
+      <p class="micro cc-cap r" style="margin-left:auto;margin-right:auto;text-align:center">Would rather be in Paris. Honestly — wouldn't we all.</p>
+    </div>
+  </section>
+
+  <!-- 6 PEACH -->
+  <section class="screen" id="c-peach">
+    <div class="content">
+      <div class="eyebrow r">Style 04 / 05</div>
+      <div class="beat r">This one measures everything.</div>
+      <button class="colorcard ctrl r" data-hex="#F7D6BB">
+        <span class="cc-fill" style="background:var(--peach)"><span class="cc-name">Auto Layout</span></span>
+        <span class="cc-meta"><span class="cc-token">Peach / Component</span><span class="cc-hex">#F7D6BB <span class="cc-copy">copy</span></span></span>
+      </button>
+      <p class="micro cc-cap r" style="margin-left:auto;margin-right:auto;text-align:center">Spacing is non-negotiable. So is she.</p>
+    </div>
+  </section>
+
+  <!-- 7 GOLD -->
+  <section class="screen" id="c-gold">
+    <div class="content">
+      <div class="eyebrow r">Style 05 / 05</div>
+      <div class="beat r">This one says good morning twice.</div>
+      <button class="colorcard ctrl r" data-hex="#EFB471">
+        <span class="cc-fill" style="background:var(--gold)"><span class="cc-name">Dzień Dobry</span></span>
+        <span class="cc-meta"><span class="cc-token">Gold / 24kt</span><span class="cc-hex">#EFB471 <span class="cc-copy">copy</span></span></span>
+      </button>
+      <p class="micro cc-cap r" style="margin-left:auto;margin-right:auto;text-align:center">Good morning, in Polish — said with one eyebrow raised.</p>
+    </div>
+  </section>
+
+  <!-- 8 TITLE: TYPOGRAPHY -->
+  <section class="screen dark titlecard" id="t-type" data-dark="1">
+    <div class="content">
+      <div class="ch r">Chapter 02</div>
+      <div class="big r">Type<br>Scale</div>
+      <p class="desc r">One message, three weights. Because how it's said matters as much as what it says.</p>
+    </div>
+  </section>
+
+  <!-- 9 TYPE RAMP -->
+  <section class="screen" id="typeramp">
+    <div class="content">
+      <div class="ramp">
+        <div class="row r"><span class="lbl">Display</span><span class="t-d">Happy <em>Birthday</em></span></div>
+        <div class="row r"><span class="lbl">Title</span><span class="t-t">to the one with the best eye in the room</span></div>
+        <div class="row r"><span class="lbl">Body</span><span class="t-b">Another year shipped — same impeccable taste, more range. We're lucky to design beside you.</span></div>
+        <div class="row r"><span class="lbl">Caption</span><span class="t-c">// set in Fraunces &amp; Space Mono</span></div>
+      </div>
+    </div>
+  </section>
+
+  <!-- 10 CELEBRATE -->
+  <section class="screen dark" id="celebrate" data-dark="1">
+    <div class="content">
+      <div class="cel-pre">
+        <div class="eyebrow r">One thing left</div>
+        <h2 class="cel-h r">There's a button. You know what to do.</h2>
+        <button class="cel-btn ctrl r" id="celBtn">Celebrate</button>
+      </div>
+      <div class="cel-post">
+        <div class="cel-lang" id="celLang">English</div>
+        <h2 class="cel-greet" id="celGreet">Happy birthday, <em>Sandra.</em></h2>
+        <button class="cel-again ctrl" id="celAgain">do it again</button>
+      </div>
+    </div>
+  </section>
+
+  <!-- 11 CANDLE -->
+  <section class="screen" id="candle" data-dark="1">
+    <div class="content">
+      <h2 class="candle-title r">Make a wish.</h2>
+      <p class="candle-sub r" id="candleSub">Close your eyes, picture something wonderful, and blow it out. We promise not to peek.</p>
+      <div class="candle-stage r" aria-hidden="true">
+        <div class="glow"></div>
+        <div class="flame"></div>
+        <div class="smoke"></div>
+        <div class="wick"></div>
+        <div class="candle"></div>
+      </div>
+      <button class="candle-btn ctrl r" id="blowBtn">Blow</button>
+    </div>
+  </section>
+
+  <!-- 12 COMIC INTRO -->
+  <section class="screen dark" id="comicintro" data-dark="1">
+    <div class="content">
+      <div class="eyebrow r">And lastly — the creative part</div>
+      <h2 class="display r">A little story, <em>inspired by you.</em></h2>
+      <p class="micro r">Press play. Four panels. You're the hero — obviously.</p>
+      <button class="btn ctrl r" id="comicPlay" style="margin-top:30px"><span class="tri">▶</span> Play the story</button>
+    </div>
+  </section>
+
+  <!-- 13 FINALE -->
+  <section class="screen" id="finale">
+    <div class="content">
+      <div class="eyebrow r">Patch Notes · v.2026</div>
+      <ul class="notes r">
+        <li><span class="k">Added</span><span>One more trip around the sun.</span></li>
+        <li><span class="k">Improved</span><span>Everything, somehow. Again.</span></li>
+        <li><span class="k">Won't fix</span><span>Still better dressed than the rest of us.</span></li>
+      </ul>
+      <p class="sign r">Released with love by the team.</p>
+      <button class="replay ctrl r" id="replay"><span>↺</span> Watch again</button>
+      <div class="credit fin-credit r">Powered by AI · built by the team</div>
+    </div>
+  </section>
+
+  <!-- COMIC PLAYER OVERLAY -->
+  <div class="comic-stage" id="comicStage">
+    <div class="comic-top">
+      <span class="comic-label">A story inspired by you</span>
+      <button class="comic-x" id="comicX" aria-label="Close">&times;</button>
+    </div>
+    <div class="comic-frame" id="comicFrame"></div>
+    <div class="comic-dots" id="comicDots"></div>
+    <div class="comic-hint" id="comicHint">tap to continue ›</div>
+  </div>
+</div>
+
+<script>
+(function(){
+  var reduce = window.matchMedia('(prefers-reduced-motion: reduce)').matches;
+  var screens = Array.prototype.slice.call(document.querySelectorAll('.screen'));
+  var chrome = document.getElementById('chrome');
+  var barsWrap = document.getElementById('bars');
+  var i = 0;
+  var endIndex = screens.length - 1;
+
+  var storyCount = screens.length - 1;
+  for(var b=0;b<storyCount;b++){ var bar=document.createElement('div'); bar.className='bar'; bar.innerHTML='<i></i>'; barsWrap.appendChild(bar); }
+  var bars = Array.prototype.slice.call(barsWrap.children);
+  function isDark(idx){ return screens[idx].getAttribute('data-dark')==='1'; }
+  function paintChrome(){
+    if(i===0){ chrome.classList.add('hidden'); return; }
+    chrome.classList.remove('hidden');
+    var dark=isDark(i);
+    chrome.style.color = dark ? 'var(--cream)' : 'var(--ink)';
+    bars.forEach(function(bar,idx){ bar.classList.toggle('dark',dark); var seg=idx+1; bar.classList.toggle('done',seg<i); bar.classList.toggle('now',seg===i); });
+  }
+  function show(n){ n=Math.max(0,Math.min(endIndex,n)); if(n===i) return; screens[i].classList.remove('active'); i=n; screens[i].classList.add('active'); paintChrome(); }
+  function next(){ if(i<endIndex) show(i+1); }
+  function prev(){ if(i>0) show(i-1); }
+  function toCover(){ show(0); chrome.classList.add('hidden'); document.getElementById('celebrate').classList.remove('popped'); document.getElementById('candle').classList.remove('out'); }
+  paintChrome();
+
+  document.getElementById('app').addEventListener('click', function(e){
+    if(comicOpen) return;
+    if(e.target.closest('.ctrl')||e.target.closest('.close')||e.target.closest('.comic-stage')) return;
+    if(i===0) return;
+    if(e.clientX < window.innerWidth*0.32) prev(); else next();
+  });
+  document.getElementById('play').addEventListener('click', function(){ show(1); });
+  document.getElementById('close').addEventListener('click', toCover);
+  document.getElementById('replay').addEventListener('click', toCover);
+
+  document.addEventListener('keydown', function(e){
+    if(comicOpen){ if(e.key==='ArrowRight'||e.key===' '){e.preventDefault();comicNext();} else if(e.key==='Escape'){closeComic();} return; }
+    if(e.key==='ArrowRight'||e.key===' '){ e.preventDefault(); if(i===0) show(1); else next(); }
+    else if(e.key==='ArrowLeft'){ prev(); }
+    else if(e.key==='Escape'){ toCover(); }
+  });
+  var sx=null;
+  document.getElementById('app').addEventListener('touchstart',function(e){ if(comicOpen) return; sx=e.touches[0].clientX; },{passive:true});
+  document.getElementById('app').addEventListener('touchend',function(e){
+    if(comicOpen||sx===null) return;
+    var dx=e.changedTouches[0].clientX-sx;
+    if(Math.abs(dx)>50){ if(dx<0){ if(i===0) show(1); else next(); } else prev(); }
+    sx=null;
+  },{passive:true});
+
+  /* color copy */
+  document.querySelectorAll('.colorcard').forEach(function(card){
+    card.addEventListener('click', function(){
+      var hex=card.getAttribute('data-hex'); var tag=card.querySelector('.cc-copy'); var o=tag.textContent;
+      function done(){ tag.textContent='copied ✓'; tag.classList.add('done'); setTimeout(function(){ tag.textContent=o; tag.classList.remove('done'); },1200); }
+      if(navigator.clipboard&&navigator.clipboard.writeText){ navigator.clipboard.writeText(hex).then(done).catch(done); } else done();
+    });
+  });
+
+  /* celebrate multilingual */
+  var greets=[
+    {l:'English', t:'Happy birthday, <em>Sandra.</em>'},
+    {l:'Polski',  t:'Wszystkiego najlepszego, <em>Sandra.</em>'},
+    {l:'Deutsch', t:'Alles Gute zum Geburtstag, <em>Sandra.</em>'},
+    {l:'Español', t:'Feliz cumpleaños, <em>Sandra.</em>'}
+  ];
+  var btnLabels=['do it again','one more time'];
+  var gIdx=0;
+  var cel=document.getElementById('celebrate');
+  var celGreet=document.getElementById('celGreet');
+  var celLang=document.getElementById('celLang');
+  var celAgain=document.getElementById('celAgain');
+  function celebrateStep(first){
+    if(!first){ gIdx=(gIdx+1)%greets.length; }
+    celGreet.innerHTML=greets[gIdx].t;
+    celLang.textContent=greets[gIdx].l;
+    celAgain.textContent=btnLabels[gIdx%btnLabels.length];
+    burst();
+  }
+  document.getElementById('celBtn').addEventListener('click', function(){ cel.classList.add('popped'); gIdx=0; celebrateStep(true); });
+  celAgain.addEventListener('click', function(){ celebrateStep(false); });
+
+  /* candle */
+  var candle=document.getElementById('candle');
+  var blowBtn=document.getElementById('blowBtn');
+  var candleSub=document.getElementById('candleSub');
+  var blown=false;
+  blowBtn.addEventListener('click', function(){
+    blown=!blown;
+    candle.classList.toggle('out', blown);
+    if(blown){ candleSub.textContent='Locked in. We didn\u2019t see a thing. ✨'; blowBtn.textContent='Light it again'; }
+    else { candleSub.textContent='Close your eyes, picture something wonderful, and blow it out. We promise not to peek.'; blowBtn.textContent='Blow'; }
+  });
+
+  /* comic player */
+  var comicOpen=false, cp=0;
+  var positions=['0% 0%','100% 0%','0% 100%','100% 100%'];
+  var stage=document.getElementById('comicStage');
+  var frame=document.getElementById('comicFrame');
+  var dotsWrap=document.getElementById('comicDots');
+  var hint=document.getElementById('comicHint');
+  for(var d=0;d<4;d++){ var dot=document.createElement('span'); dot.className='comic-dot'; dotsWrap.appendChild(dot); }
+  var dots=Array.prototype.slice.call(dotsWrap.children);
+  function setPanel(){ frame.style.backgroundPosition=positions[cp]; dots.forEach(function(dt,k){ dt.classList.toggle('on',k===cp); }); hint.textContent = cp<3 ? 'tap to continue ›' : 'tap to finish ›'; }
+  function openComic(){ comicOpen=true; cp=0; stage.classList.add('open'); setPanel(); }
+  function comicNext(){ if(cp<3){ cp++; setPanel(); } else { closeComic(); show(endIndex); } }
+  function closeComic(){ comicOpen=false; stage.classList.remove('open'); }
+  document.getElementById('comicPlay').addEventListener('click', openComic);
+  document.getElementById('comicX').addEventListener('click', function(e){ e.stopPropagation(); closeComic(); });
+  frame.addEventListener('click', function(e){ e.stopPropagation(); comicNext(); });
+  stage.addEventListener('click', function(e){ if(e.target===stage) comicNext(); });
+
+  /* expose for keyboard */
+  window.comicNext=comicNext; window.closeComic=closeComic;
+  Object.defineProperty(window,'comicOpen',{get:function(){return comicOpen;}});
+
+  /* ===== confetti ===== */
+  var palette=['#E59A98','#F4DCD9','#BFCABF','#F7D6BB','#EFB471','#FFFFFF'];
+  var canvas=document.getElementById('fx'); var ctx=canvas.getContext('2d');
+  var pieces=[], raf=null, W,H, dpr=Math.min(window.devicePixelRatio||1,2), emitting=false, emitUntil=0;
+  function size(){ W=innerWidth; H=innerHeight; canvas.width=W*dpr; canvas.height=H*dpr; ctx.setTransform(dpr,0,0,dpr,0,0); }
+  size(); addEventListener('resize', size);
+  function make(x,y,vx,vy,big){ var t=Math.random(); pieces.push({x:x,y:y,vx:vx,vy:vy,s:(big?7:5)+Math.random()*7,r:Math.random()*6.28,vr:(Math.random()-.5)*.34,c:palette[(Math.random()*palette.length)|0],shape:t<0.5?'rect':(t<0.8?'circle':'star'),life:0,max:120+Math.random()*70}); }
+  function burst(){ var cx=innerWidth/2, cy=innerHeight*0.42, n=reduce?40:140; for(var k=0;k<n;k++){ var a=Math.random()*6.28, sp=5+Math.random()*12; make(cx,cy,Math.cos(a)*sp,Math.sin(a)*sp-6,true); } if(!reduce){ emitting=true; emitUntil=performance.now()+2600; } if(!raf) raf=requestAnimationFrame(loop); }
+  function fountain(){ var n=6, base=innerHeight+12; for(var k=0;k<n;k++){ make(Math.random()*innerWidth, base, (Math.random()-.5)*4, -(9+Math.random()*7), false); } }
+  function drawStar(s){ ctx.beginPath(); for(var p=0;p<4;p++){ var ang=p*Math.PI/2; ctx.lineTo(Math.cos(ang)*s*0.6,Math.sin(ang)*s*0.6); ctx.lineTo(Math.cos(ang+Math.PI/4)*s*0.18,Math.sin(ang+Math.PI/4)*s*0.18);} ctx.closePath(); ctx.fill(); }
+  function loop(now){
+    ctx.clearRect(0,0,W,H);
+    if(emitting){ if(now<emitUntil) fountain(); else emitting=false; }
+    for(var k=pieces.length-1;k>=0;k--){ var p=pieces[k]; p.life++; p.vy+=0.22; p.vx*=0.992; p.x+=p.vx; p.y+=p.vy; p.r+=p.vr;
+      var a=Math.max(0,1-p.life/p.max); ctx.save(); ctx.globalAlpha=a; ctx.translate(p.x,p.y); ctx.rotate(p.r); ctx.fillStyle=p.c;
+      if(p.shape==='rect') ctx.fillRect(-p.s/2,-p.s/2,p.s,p.s*0.6);
+      else if(p.shape==='circle'){ ctx.beginPath(); ctx.arc(0,0,p.s*0.45,0,6.28); ctx.fill(); }
+      else drawStar(p.s);
+      ctx.restore(); if(p.life>=p.max||p.y>H+60) pieces.splice(k,1);
+    }
+    if(pieces.length||emitting) raf=requestAnimationFrame(loop); else { ctx.clearRect(0,0,W,H); raf=null; }
+  }
+  window.burst=burst;
+  // local alias so celebrate handlers above can call burst()
+  function burstAlias(){ burst(); }
+  window._burst=burst;
+})();
+</script>
+</body>
+</html>
